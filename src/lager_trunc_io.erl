@@ -3,12 +3,12 @@
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with your Erlang distribution. If not, it can be
 %% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
+%%
 %% The Initial Developer of the Original Code is Corelatus AB.
 %% Portions created by Corelatus are Copyright 2003, Corelatus
 %% AB. All Rights Reserved.''
@@ -32,7 +32,7 @@
 
 -module(lager_trunc_io).
 -author('matthias@corelatus.se').
-%% And thanks to Chris Newcombe for a bug fix 
+%% And thanks to Chris Newcombe for a bug fix
 -export([format/3, format/4, print/2, print/3, fprint/2, fprint/3, safe/2]). % interface functions
 -version("$Id: trunc_io.erl,v 1.11 2009-02-23 12:01:06 matthias Exp $").
 
@@ -76,11 +76,11 @@ fprint(Term, Max) ->
 %% @doc Returns an flattened list containing the ASCII representation of the given
 %% term.
 -spec fprint(term(), pos_integer(), options()) -> string().
-fprint(T, Max, Options) -> 
+fprint(T, Max, Options) ->
     {L, _} = print(T, Max, prepare_options(Options, #print_options{})),
     lists:flatten(L).
 
-%% @doc Same as print, but never crashes. 
+%% @doc Same as print, but never crashes.
 %%
 %% This is a tradeoff. Print might conceivably crash if it's asked to
 %% print something it doesn't understand, for example some new data
@@ -88,7 +88,7 @@ fprint(T, Max, Options) ->
 %% to io_lib to format the term, but then the formatting is
 %% depth-limited instead of length limited, so you might run out
 %% memory printing it. Out of the frying pan and into the fire.
-%% 
+%%
 -spec safe(term(), pos_integer()) -> {string(), pos_integer()} | {string()}.
 safe(What, Len) ->
     case catch print(What, Len) of
@@ -114,8 +114,8 @@ print(_, Max, _Options) when Max < 0 -> {"...", 3};
 print(_, _, #print_options{depth=0}) -> {"...", 3};
 
 
-%% @doc We assume atoms, floats, funs, integers, PIDs, ports and refs never need 
-%% to be truncated. This isn't strictly true, someone could make an 
+%% @doc We assume atoms, floats, funs, integers, PIDs, ports and refs never need
+%% to be truncated. This isn't strictly true, someone could make an
 %% arbitrarily long bignum. Let's assume that won't happen unless someone
 %% is being malicious.
 %%
@@ -214,15 +214,15 @@ print({inline_bitstring, B}, _Max, _Options) when is_bitstring(B) ->
     SizeStr = integer_to_list(Size),
     {[ValueStr, $:, SizeStr], length(ValueStr) + length(SizeStr) +1};
 print(BitString, Max, Options) when is_bitstring(BitString) ->
-    case byte_size(BitString) > Max of
+    BL = case byte_size(BitString) > Max of
         true ->
-            BL = binary_to_list(BitString, 1, Max);
+            binary_to_list(BitString, 1, Max);
         _ ->
             R = erlang:bitstring_to_list(BitString),
             {Bytes, [Bits]} = lists:splitwith(fun erlang:is_integer/1, R),
             %% tag the trailing bits with a special tuple we catch when
             %% list_body calls print again
-            BL = Bytes ++ [{inline_bitstring, Bits}]
+            Bytes ++ [{inline_bitstring, Bits}]
     end,
     {X, Len0} = list_body(BL, Max - 4, dec_depth(Options), true),
     {["<<", X, ">>"], Len0 + 4};
@@ -265,7 +265,7 @@ print({'$lager_record', Name, Fields}, Max, Options) ->
     {RC, Len} = record_fields(Fields, Max - length(Leader) + 1, dec_depth(Options)),
     {[Leader, RC, "}"], Len + length(Leader) + 1};
 
-print(Tuple, Max, Options) when is_tuple(Tuple) -> 
+print(Tuple, Max, Options) when is_tuple(Tuple) ->
     {TC, Len} = tuple_contents(Tuple, Max-2, Options),
     {[${, TC, $}], Len + 2};
 
@@ -277,6 +277,15 @@ print(List, Max, Options) when is_list(List) ->
         _ ->
             {R, Len} = list_body(List, Max - 2, dec_depth(Options), false),
             {[$[, R, $]], Len + 2}
+    end;
+
+print(Map, Max, Options) ->
+    case erlang:is_builtin(erlang, is_map, 1) andalso erlang:is_map(Map) of
+        true ->
+            {MapBody, Len} = map_body(Map, Max - 3, dec_depth(Options)),
+            {[$#, ${, MapBody, $}], Len + 3};
+        false ->
+            error(badarg, [Map, Max, Options])
     end.
 
 %% Returns {List, Length}
@@ -298,7 +307,7 @@ list_body([H|_], Max, Options=#print_options{depth=1}, Tuple) ->
         false -> $|
     end,
     {[List ++ [Sep | "..."]], Len + 4};
-list_body([H|T], Max, Options, Tuple) -> 
+list_body([H|T], Max, Options, Tuple) ->
     {List, Len} = print(H, Max, Options),
     {Final, FLen} = list_bodyc(T, Max - Len, Options, Tuple),
     {[List|Final], FLen + Len};
@@ -310,7 +319,7 @@ list_bodyc([], _Max, _Options, _Tuple) -> {[], 0};
 list_bodyc(_, Max, _Options, _Tuple) when Max < 5 -> {",...", 4};
 list_bodyc(_, _Max, #print_options{depth=1}, true) -> {",...", 4};
 list_bodyc(_, _Max, #print_options{depth=1}, false) -> {"|...", 4};
-list_bodyc([H|T], Max, #print_options{depth=Depth} = Options, Tuple) -> 
+list_bodyc([H|T], Max, #print_options{depth=Depth} = Options, Tuple) ->
     {List, Len} = print(H, Max, dec_depth(Options)),
     {Final, FLen} = list_bodyc(T, Max - Len - 1, dec_depth(Options), Tuple),
     Sep = case Depth == 1 andalso not Tuple of
@@ -321,6 +330,36 @@ list_bodyc([H|T], Max, #print_options{depth=Depth} = Options, Tuple) ->
 list_bodyc(X, Max, Options, _Tuple) ->  %% improper list
     {List, Len} = print(X, Max - 1, Options),
     {[$|,List], Len + 1}.
+
+map_body(Map, Max, #print_options{depth=Depth}) when Max < 4; Depth =:= 0 ->
+    case erlang:map_size(Map) of
+        0 -> {[], 0};
+        _ -> {"...", 3}
+    end;
+map_body(Map, Max, Options) ->
+    case maps:to_list(Map) of
+        [] ->
+            {[], 0};
+        [{Key, Value} | Rest] ->
+            {KeyStr, KeyLen} = print(Key, Max - 4, Options),
+            DiffLen = KeyLen + 4,
+            {ValueStr, ValueLen} = print(Value, Max - DiffLen, Options),
+            DiffLen2 = DiffLen + ValueLen,
+            {Final, FLen} = map_bodyc(Rest, Max - DiffLen2, dec_depth(Options)),
+            {[KeyStr, " => ", ValueStr | Final], DiffLen2 + FLen}
+    end.
+
+map_bodyc([], _Max, _Options) ->
+    {[], 0};
+map_bodyc(_Rest, Max,#print_options{depth=Depth}) when Max < 5; Depth =:= 0 ->
+    {",...", 4};
+map_bodyc([{Key, Value} | Rest], Max, Options) ->
+    {KeyStr, KeyLen} = print(Key, Max - 5, Options),
+    DiffLen = KeyLen + 5,
+    {ValueStr, ValueLen} = print(Value, Max - DiffLen, Options),
+    DiffLen2 = DiffLen + ValueLen,
+    {Final, FLen} = map_bodyc(Rest, Max - DiffLen2, dec_depth(Options)),
+    {[$,, KeyStr, " => ", ValueStr | Final], DiffLen2 + FLen}.
 
 %% The head of a list we hope is ascii. Examples:
 %%
@@ -514,7 +553,7 @@ perf(M, F, Reps) when Reps > 0 ->
     test(M,F),
     perf(M,F,Reps-1);
 perf(_,_,_) ->
-    done.    
+    done.
 
 %% Performance test. Needs a particularly large term I saved as a binary...
 -spec perf1() -> {non_neg_integer(), non_neg_integer()}.
@@ -531,7 +570,7 @@ format_test() ->
     ?assertEqual("[\"foo\",98,97,114]", lists:flatten(format("~p", [["foo", $b, $a, $r]], 50))),
     ?assertEqual("[\"foo\",98,97,114]", lists:flatten(format("~P", [["foo", $b, $a, $r], 10], 50))),
     ?assertEqual("[[102,111,111],98,97,114]", lists:flatten(format("~w", [["foo", $b, $a, $r]], 50))),
-    
+
     %% complex ones
     ?assertEqual("    foobar", lists:flatten(format("~10s", [["foo", $b, $a, $r]], 50))),
     ?assertEqual("f", lists:flatten(format("~1s", [["foo", $b, $a, $r]], 50))),
@@ -703,6 +742,46 @@ tuple_printing_test() ->
                         22835963083295358096932575511191922182123945984}], 53))),
     ok.
 
+map_printing_test() ->
+    case erlang:is_builtin(erlang, is_map, 1) of
+        true ->
+            ?assertEqual("#{}", lists:flatten(format("~p", [maps:new()], 50))),
+            ?assertEqual("#{}", lists:flatten(format("~p", [maps:new()], 3))),
+            ?assertEqual("#{}", lists:flatten(format("~w", [maps:new()], 50))),
+            ?assertError(badarg, lists:flatten(format("~s", [maps:new()], 50))),
+            ?assertEqual("#{...}", lists:flatten(format("~p", [maps:from_list([{bar, foo}])], 1))),
+            ?assertEqual("#{...}", lists:flatten(format("~p", [maps:from_list([{bar, foo}])], 6))),
+            ?assertEqual("#{bar => ...}", lists:flatten(format("~p", [maps:from_list([{bar, foo}])], 7))),
+            ?assertEqual("#{bar => ...}", lists:flatten(format("~p", [maps:from_list([{bar, foo}])], 9))),
+            ?assertEqual("#{bar => foo}", lists:flatten(format("~p", [maps:from_list([{bar, foo}])], 10))),
+            ?assertEqual("#{bar => ...,...}", lists:flatten(format("~p", [maps:from_list([{bar, foo}, {foo, bar}])], 9))),
+            ?assertEqual("#{bar => foo,...}", lists:flatten(format("~p", [maps:from_list([{bar, foo}, {foo, bar}])], 10))),
+            ?assertEqual("#{bar => foo,...}", lists:flatten(format("~p", [maps:from_list([{bar, foo}, {foo, bar}])], 17))),
+            ?assertEqual("#{bar => foo,foo => ...}", lists:flatten(format("~p", [maps:from_list([{bar, foo}, {foo, bar}])], 18))),
+            ?assertEqual("#{bar => foo,foo => ...}", lists:flatten(format("~p", [maps:from_list([{bar, foo}, {foo, bar}])], 19))),
+            ?assertEqual("#{bar => foo,foo => ...}", lists:flatten(format("~p", [maps:from_list([{bar, foo}, {foo, bar}])], 20))),
+            ?assertEqual("#{bar => foo,foo => bar}", lists:flatten(format("~p", [maps:from_list([{bar, foo}, {foo, bar}])], 21))),
+            ?assertEqual("#{22835963083295358096932575511191922182123945984 => ...}",
+                         lists:flatten(format("~w", [
+                                                     maps:from_list([{22835963083295358096932575511191922182123945984,
+                                                       22835963083295358096932575511191922182123945984}])], 10))),
+            ?assertEqual("#{22835963083295358096932575511191922182123945984 => ...}",
+                         lists:flatten(format("~w", [
+                                                     maps:from_list([{22835963083295358096932575511191922182123945984,
+                                                       bar}])], 10))),
+            ?assertEqual("#{22835963083295358096932575511191922182123945984 => ...}",
+                         lists:flatten(format("~w", [
+                                                     maps:from_list([{22835963083295358096932575511191922182123945984,
+                                                       bar}])], 53))),
+            ?assertEqual("#{22835963083295358096932575511191922182123945984 => bar}",
+                         lists:flatten(format("~w", [
+                                                     maps:from_list([{22835963083295358096932575511191922182123945984,
+                                                       bar}])], 54))),
+            ok;
+        false ->
+            ok
+    end.
+
 unicode_test() ->
     ?assertEqual([231,167,129], lists:flatten(format("~s", [<<231,167,129>>], 50))),
     ?assertEqual([31169], lists:flatten(format("~ts", [<<231,167,129>>], 50))),
@@ -726,6 +805,29 @@ depth_limit_test() ->
     ?assertEqual("{a,{b,{c,{...}}}}", lists:flatten(format("~P", [{a, {b, {c, {d}}}}, 7], 50))),
     ?assertEqual("{a,{b,{c,{d}}}}", lists:flatten(format("~P", [{a, {b, {c, {d}}}}, 8], 50))),
 
+    case erlang:is_builtin(erlang, is_map, 1) of
+        true ->
+            ?assertEqual("#{a => #{...}}",
+                         lists:flatten(format("~P",
+                                              [maps:from_list([{a, maps:from_list([{b, maps:from_list([{c, d}])}])}]), 2], 50))),
+            ?assertEqual("#{a => #{b => #{...}}}",
+                         lists:flatten(format("~P",
+                                              [maps:from_list([{a, maps:from_list([{b, maps:from_list([{c, d}])}])}]), 3], 50))),
+            ?assertEqual("#{a => #{b => #{c => d}}}",
+                         lists:flatten(format("~P",
+                                              [maps:from_list([{a, maps:from_list([{b, maps:from_list([{c, d}])}])}]), 4], 50))),
+
+            ?assertEqual("#{}", lists:flatten(format("~P", [maps:new(), 1], 50))),
+            ?assertEqual("#{...}", lists:flatten(format("~P", [maps:from_list([{1,1}, {2,2}, {3,3}]), 1], 50))),
+            ?assertEqual("#{1 => 1,...}", lists:flatten(format("~P", [maps:from_list([{1,1}, {2,2}, {3,3}]), 2], 50))),
+            ?assertEqual("#{1 => 1,2 => 2,...}", lists:flatten(format("~P", [maps:from_list([{1,1}, {2,2}, {3,3}]), 3], 50))),
+            ?assertEqual("#{1 => 1,2 => 2,3 => 3}", lists:flatten(format("~P", [maps:from_list([{1,1}, {2,2}, {3,3}]), 4], 50))),
+
+            ok;
+        false ->
+            ok
+    end,
+
     ?assertEqual("{\"a\",[...]}", lists:flatten(format("~P", [{"a", ["b", ["c", ["d"]]]}, 3], 50))),
     ?assertEqual("{\"a\",[\"b\",[[...]|...]]}", lists:flatten(format("~P", [{"a", ["b", ["c", ["d"]]]}, 6], 50))),
     ?assertEqual("{\"a\",[\"b\",[\"c\",[\"d\"]]]}", lists:flatten(format("~P", [{"a", ["b", ["c", ["d"]]]}, 9], 50))),
@@ -734,7 +836,7 @@ depth_limit_test() ->
     ?assertEqual("[1|...]", lists:flatten(format("~P", [[1, 2, 3], 2], 50))),
     ?assertEqual("[1,2|...]", lists:flatten(format("~P", [[1, 2, 3], 3], 50))),
     ?assertEqual("[1,2,3]", lists:flatten(format("~P", [[1, 2, 3], 4], 50))),
-    
+
     ?assertEqual("{1,...}", lists:flatten(format("~P", [{1, 2, 3}, 2], 50))),
     ?assertEqual("{1,2,...}", lists:flatten(format("~P", [{1, 2, 3}, 3], 50))),
     ?assertEqual("{1,2,3}", lists:flatten(format("~P", [{1, 2, 3}, 4], 50))),
@@ -743,13 +845,13 @@ depth_limit_test() ->
     ?assertEqual("[1,2|...]", lists:flatten(format("~P", [[1, 2, <<3>>], 3], 50))),
     ?assertEqual("[1,2,<<...>>]", lists:flatten(format("~P", [[1, 2, <<3>>], 4], 50))),
     ?assertEqual("[1,2,<<3>>]", lists:flatten(format("~P", [[1, 2, <<3>>], 5], 50))),
-    
+
     ?assertEqual("<<...>>", lists:flatten(format("~P", [<<0, 0, 0, 0>>, 1], 50))),
     ?assertEqual("<<0,...>>", lists:flatten(format("~P", [<<0, 0, 0, 0>>, 2], 50))),
     ?assertEqual("<<0,0,...>>", lists:flatten(format("~P", [<<0, 0, 0, 0>>, 3], 50))),
     ?assertEqual("<<0,0,0,...>>", lists:flatten(format("~P", [<<0, 0, 0, 0>>, 4], 50))),
     ?assertEqual("<<0,0,0,0>>", lists:flatten(format("~P", [<<0, 0, 0, 0>>, 5], 50))),
-    
+
     %% this is a seriously weird edge case
     ?assertEqual("<<\"   \"...>>", lists:flatten(format("~P", [<<32, 32, 32, 0>>, 2], 50))),
     ?assertEqual("<<\"   \"...>>", lists:flatten(format("~P", [<<32, 32, 32, 0>>, 3], 50))),
